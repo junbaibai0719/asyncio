@@ -107,6 +107,7 @@ struct Awaitable {
     {
         std::cout << "await suspend" << std::endl;
         while (!this->_handle.promise().ready) {
+            // 让出cpu，直到promise准备好
             std::this_thread::yield();
         }
         handle();
