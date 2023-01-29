@@ -40,6 +40,7 @@ struct Promise {
         T, V &&>) requires std::is_convertible_v<V &&, T> {
         _value.template emplace<T>(std::forward<V>(value));
         std::cout<< std::chrono::system_clock::now() << "\t" << __FUNCTION__ << " #2 my thread id is " << std::this_thread::get_id() << std::endl;
+        this->ready = true;
     }
 
     void unhandled_exception() noexcept
@@ -69,6 +70,7 @@ struct Promise {
     }
 
     std::variant<std::monostate, T, std::exception_ptr> _value;
+    bool ready = false;
 };
 
 template<typename T>
@@ -78,8 +80,8 @@ struct Awaitable {
     Awaitable(Handle coro) : _handle(coro) {}
     bool await_ready() const noexcept
     {
-        std::cout << "await_ready" << std::endl;
-        return false;
+        std::cout << "await_ready" << !this->_handle.promise().ready << std::endl;
+        return !this->_handle.promise().ready;
     }
 
     auto await_resume()
@@ -104,6 +106,9 @@ struct Awaitable {
     void await_suspend(std::coroutine_handle<> handle) noexcept
     {
         std::cout << "await suspend" << std::endl;
+        while (!this->_handle.promise().ready) {
+            std::this_thread::yield();
+        }
         handle();
     }
 
@@ -161,7 +166,7 @@ struct async {
 async<int> task1()
 {
     std::cout<< std::chrono::system_clock::now() << "\t" << __FUNCTION__ << " #1 my thread id is " << std::this_thread::get_id() << std::endl;
-    co_await fork{};
+//    co_await fork{};
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     std::cout<< std::chrono::system_clock::now() << "\t" << __FUNCTION__ << " #2 my thread id is " << std::this_thread::get_id() << std::endl;
     co_return 1231313;
