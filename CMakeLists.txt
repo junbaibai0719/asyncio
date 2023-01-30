@@ -14,11 +14,15 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core LinguistTools)
 
 set(TS_FILES async_zh_CN.ts)
 
+add_subdirectory(asyncio)
+add_subdirectory(qasync)
+
 add_executable(async
   main.cpp
+  message_handler.cpp message_handler.h
   ${TS_FILES}
 )
-target_link_libraries(async Qt${QT_VERSION_MAJOR}::Core)
+target_link_libraries(async Qt${QT_VERSION_MAJOR}::Core qasync)
 
 if(COMMAND qt_create_translation)
     qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
