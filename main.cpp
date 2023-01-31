@@ -42,11 +42,14 @@ async<int> test()
     co_return r;
 }
 
-void test_test(){
-    auto func = [=]()->DetachedCoroutine{
-        co_await test();
-    };
-    func();
+void test_test()
+{
+//    for (int var = 0; var < 1000; ++var) {
+        test().start([](int res) {
+            qDebug() << res;
+        });
+//    }
+    qDebug() << 1111111111111;
 }
 
 int main(int argc, char *argv[])
@@ -63,6 +66,7 @@ int main(int argc, char *argv[])
             break;
         }
     }
+    qDebug() << 11111111111111;
     test_test();
     return a.exec();
 }

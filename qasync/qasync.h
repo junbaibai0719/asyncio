@@ -43,20 +43,27 @@ private:
 
 struct DetachedCoroutine {
     struct promise_type {
-        std::suspend_never initial_suspend() noexcept { return {}; }
-        std::suspend_never final_suspend() noexcept {
-            return {}; }
+        std::suspend_never initial_suspend() noexcept
+        {
+            return {};
+        }
+        std::suspend_never final_suspend() noexcept
+        {
+            return {};
+        }
         void return_void() noexcept {}
-        void unhandled_exception() {
+        void unhandled_exception()
+        {
             try {
                 std::rethrow_exception(std::current_exception());
-            } catch (const std::exception& e) {
+            } catch (const std::exception &e) {
                 fprintf(stderr, "find exception %s\n", e.what());
                 fflush(stderr);
                 std::rethrow_exception(std::current_exception());
             }
         }
-        DetachedCoroutine get_return_object() noexcept {
+        DetachedCoroutine get_return_object() noexcept
+        {
             return DetachedCoroutine();
         }
     };
@@ -64,19 +71,29 @@ struct DetachedCoroutine {
 
 template<typename T>
 struct Promise {
+    struct FinalAwaiter {
+        bool await_ready() const noexcept { return false; }
+        template <typename PromiseType>
+        auto await_suspend(std::coroutine_handle<PromiseType> h) noexcept {
+            // resume parent coro
+            return h.promise().parent_coro;
+        }
+        void await_resume() noexcept {}
+    };
 
     async<T> get_return_object()
     {
         return async<T> {std::coroutine_handle<Promise<T>>::from_promise(*this)};
     }
 
-    std::suspend_never initial_suspend()noexcept
+    std::suspend_always initial_suspend()noexcept
     {
         return {};
     }
 
-    std::suspend_always final_suspend() noexcept
+    FinalAwaiter final_suspend() noexcept
     {
+        qDebug() << "final suspend";
         return {};
     }
 
@@ -97,7 +114,7 @@ struct Promise {
         _value.template emplace<std::exception_ptr>(std::current_exception());
     }
 
-    T &result() & {
+    T &result()& {
         if (std::holds_alternative<std::exception_ptr>(_value))
             AS_UNLIKELY {
             std::rethrow_exception(std::get<std::exception_ptr>(_value));
@@ -106,7 +123,7 @@ struct Promise {
         return std::get<T>(_value);
     }
 
-    T &&result() && {
+    T &&result()&& {
         if (std::holds_alternative<std::exception_ptr>(_value))
             AS_UNLIKELY {
             std::rethrow_exception(std::get<std::exception_ptr>(_value));
@@ -118,6 +135,7 @@ struct Promise {
     std::variant<std::monostate, T, std::exception_ptr> _value;
     bool ready = false;
     void *resume_handle = nullptr;
+    std::coroutine_handle<> parent_coro;
 };
 
 template<typename T>
@@ -161,16 +179,20 @@ struct Awaitable {
         }
     }
 
-    void await_suspend(std::coroutine_handle<> callback_handle) noexcept
+    auto await_suspend(std::coroutine_handle<> callback_handle) noexcept
     {
         std::cout << "await suspend ready:" << this->_handle.promise().ready << " thread id "<< std::this_thread::get_id() << std::endl;
-        if (this->_handle.promise().ready) {
-            callback_handle();
-        } else {
-            qDebug() << _handle.address();
-            std::cout << "await suspend set resume_handle:" << callback_handle.address() << " thread id "<< std::this_thread::get_id() << std::endl;
-            this->_handle.promise().resume_handle = callback_handle.address();
-        }
+        this->_handle.promise().parent_coro = callback_handle;
+        // return self current coro, run current coro
+        return this->_handle;
+//        if (this->_handle.promise().ready) {
+//            callback_handle();
+//        } else {
+//            qDebug() << "handle addr";
+//            qDebug() << _handle.address();
+//            std::cout << "await suspend set resume_handle:" << callback_handle.address() << " thread id "<< std::this_thread::get_id() << std::endl;
+//            this->_handle.promise().resume_handle = callback_handle.address();
+//        }
     }
 
 };
@@ -187,18 +209,18 @@ struct fork {
 
     void await_suspend(std::coroutine_handle<> coro)
     {
-//        std::cout<< NOW_TIME_T << "\t" << __FUNCTION__ << " fork my thread id is " << std::this_thread::get_id() << std::endl;
-//        QThreadPool::globalInstance()->start(
-//        [=] {
-//            std::cout<< NOW_TIME_T << "\t" << "New thread id " << std::this_thread::get_id() << std::endl;
-//            coro.resume();
-//        });
-        std::thread t(
+        std::cout<< NOW_TIME_T << "\t" << __FUNCTION__ << " fork my thread id is " << std::this_thread::get_id() << std::endl;
+        QThreadPool::globalInstance()->start(
         [=] {
             std::cout<< NOW_TIME_T << "\t" << "New thread id " << std::this_thread::get_id() << std::endl;
             coro.resume();
         });
-        t.detach();
+//        std::thread t(
+//        [=] {
+//            std::cout<< NOW_TIME_T << "\t" << "New thread id " << std::this_thread::get_id() << std::endl;
+//            coro.resume();
+//        });
+//        t.detach();
     }
 
     void await_resume()
@@ -228,6 +250,16 @@ struct async {
     auto operator co_await()
     {
         return Awaitable<T>(std::exchange(_coro, nullptr));
+    }
+    template <typename Func>
+    void start(Func callback) requires(std::is_invocable_v<Func, T>)
+    {
+        auto func = [=, this]()->DetachedCoroutine{
+            callback(co_await *this);
+            qDebug() << "call func";
+        };
+        func();
+        qDebug() << 123131313;
     }
 };
 }
